@@ -6,7 +6,40 @@ from keras_core.backend.common.stateless_scope import get_stateless_scope
 from keras_core.backend.common.stateless_scope import in_stateless_scope
 from keras_core.utils.naming import auto_name
 
+def maybe_register_pytree(cls):
+    try:
+        import jax
 
+        original_init = cls.__init__
+
+        def tree_flatten(self):
+            children = [self._value] 
+            aux_data = [self._shape, self._dtype, self.trainable, self.name]
+            return children, aux_data
+
+        @classmethod
+        def tree_unflatten(cls, aux_data, children):
+            _value = children[0]
+            _shape, _dtype, trainable, name = aux_data
+            instance = cls(_value)
+            instance._shape = _shape
+            instance._dtype = _dtype
+            instance.trainable = trainable
+            instance.name = name
+            return instance
+
+        cls.__init__ = original_init
+        cls.tree_flatten = tree_flatten
+        cls.tree_unflatten = tree_unflatten
+        jax.tree_util.register_pytree_node_class(cls)
+
+    except ImportError:
+        pass  # JAX is not installed
+
+    return cls
+
+
+@maybe_register_pytree
 class KerasVariable:
     def __init__(
         self, initializer, shape=None, dtype=None, trainable=True, name=None
